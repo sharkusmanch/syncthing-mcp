@@ -1,0 +1,5 @@
+[project]
+name = "syncthing-mcp-legacy-client-tests"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = ["mcp==1.30.0"]

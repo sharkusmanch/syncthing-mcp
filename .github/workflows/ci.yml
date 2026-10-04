@@ -1,0 +1,60 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.14']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: '0.12.23'
+          enable-cache: false
+      - run: uv sync --locked --group dev --group build
+      - run: uv run --no-sync ruff check . && uv run --no-sync ruff format --check .
+      - run: uv run --no-sync mypy src
+      - name: Install verified disposable Syncthing fixture
+        run: |
+          sh scripts/install-test-syncthing.sh "$RUNNER_TEMP/syncthing-fixture"
+          echo "SYNCTHING_TEST_BINARY=$RUNNER_TEMP/syncthing-fixture/syncthing-linux-amd64-v2.1.5/syncthing" >> "$GITHUB_ENV"
+      - run: uv run --no-sync pytest --cov=syncthing_mcp --cov-branch --cov-report=term-missing --cov-fail-under=80
+      - name: Actual SDK v1 transport compatibility
+        run: uv run --project tests/legacy-client --locked python scripts/legacy_smoke.py --server-python "$PWD/.venv/bin/python"
+      - run: uv build --no-build-isolation
+      - name: Audit locked runtime dependencies
+        run: |
+          uv export --locked --no-dev --no-emit-project --format requirements-txt --output-file /tmp/runtime.txt
+          uv run --no-sync pip-audit -r /tmp/runtime.txt --disable-pip --no-deps
+  image-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: syncthing-mcp:test
+      - name: Restricted container smoke test
+        run: sh scripts/container-smoke.sh syncthing-mcp:test

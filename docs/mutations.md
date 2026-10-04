@@ -1,0 +1,29 @@
+# Mutation policy and outcomes
+
+Every mutation requires `ALLOW_WRITES=true`. Destructive and administrative operations also require their corresponding gates, regardless of discovery filters. Destructive operations require explicit `confirm=true`; that is an accidental-action guard, not proof of human consent. Synchronization is not backup: changes can propagate to every peer.
+
+## Fields
+
+Unknown fields, identity changes in generic patches and invalid nested shapes are rejected. The authoritative reviewed allowlists and type checks are in [`policy.py`](../src/syncthing_mcp/policy.py), derived from Syncthing 2.1.5.
+
+| Object | Ordinary write fields | Additional admin fields / restrictions |
+|---|---|---|
+| Folder | `label`, `paused`, `rescanIntervalS`, `fsWatcherEnabled`, `fsWatcherDelayS` | Paths, explicit peers, filesystem/type, versioning, permission/ownership/xattr flags, resource and scan settings; destination roots enforced |
+| Device | `name`, `paused`, `compression`, `maxSendKbps`, `maxRecvKbps` | Addresses, certificate/trust, introduction, auto-accept, network and connection settings |
+| Defaults | None | Explicit field policy; inherited defaults validated when creating |
+| Options | None | Enumerated network/discovery, bandwidth, reporting and runtime settings |
+| GUI / LDAP | None | Enumerated security settings; no API-key rotation through this server, unsafe bypass flags rejected |
+
+No root configuration replacement, external-command versioner, arbitrary method/URL/body proxy, or ignored-device workflow requiring root replacement exists. Simple, trashcan and staggered versioning are supported with reviewed parameters and archive destination checks. `#include` ignores and transitions to/from `receiveencrypted` are excluded.
+
+## Writes
+
+Updates fetch current state, compare optional `expected_revision`, preserve unrelated nested properties, and PUT the controlled merge. Arrays are explicit replacement values, not implicit append operations. Revisions hash current upstream objects; obtain them from individual configuration reads. Local locks serialize this server's writes only. Other API/UI clients can race revision and duplicate-create checks because Syncthing has no atomic compare-and-swap or create-if-absent.
+
+Creation refuses an existing ID, selects peers explicitly, validates inherited settings, and creates paused. Ignore initialization/readback must succeed before a requested resume. Pending acceptance requires an actual matching offer. Dismissing an offer is temporary; it does not permanently block a peer or folder. Destination allowlists are required for creation/path changes; empty roots deny them.
+
+Results distinguish `request_outcome`, `readback_verified`, `outcome`, `persistence`, and `restart_required`. `verified` means the requested effective runtime state was independently observed, not that a disk durability check was performed. `accepted` means an asynchronous operation was accepted. A failed request with matching subsequent state remains ambiguous. `restart_required=null` means unknown. Timeouts and ambiguous writes are never automatically replayed.
+
+Scanning is synchronous upstream with a longer deadline. Override/revert are asynchronous and can propagate destructive changes. Version restore checks availability and inspects per-file errors even on HTTP200. Removing a folder removes configuration, not its existing local files. Database reset accepts one explicitly named paused folder per invocation because Syncthing restarts after each reset; reset-all is excluded. External clients can race preflight, so failures can still represent partial effects.
+
+The initial cluster deployment enables no mutations. Real write integration tests use an isolated temporary Syncthing profile with no remote peers.
