@@ -154,6 +154,14 @@ async def update(
     kind = kind_for(route)
     validate_patch(kind, patch, settings, instance, effective=effective)
     if kind == "gui":
+        status = await client.request("GET", "/rest/system/status")
+        if not isinstance(status, dict) or type(status.get("guiAddressOverridden")) is not bool:
+            raise PublicError("upstream_shape", "Cannot verify the GUI runtime override state.")
+        if status["guiAddressOverridden"]:
+            raise PublicError(
+                "unsupported_override",
+                "GUI runtime address overrides require manual administration.",
+            )
         address = effective.get("address")
         if isinstance(address, str) and address.startswith("/"):
             if not settings.allow_destructive:

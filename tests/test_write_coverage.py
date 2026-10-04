@@ -89,7 +89,7 @@ class ContractBackend:
             )
             return httpx.Response(200)
         if route == "/rest/system/status":
-            return httpx.Response(200, json={"myID": "peer"})
+            return httpx.Response(200, json={"myID": "peer", "guiAddressOverridden": False})
         if route == "/rest/system/upgrade" and method == "GET":
             return httpx.Response(200, json={"newer": True, "latest": "v2.1.6"})
         if route.startswith("/rest/cluster/pending/"):

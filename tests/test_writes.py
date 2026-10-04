@@ -457,6 +457,8 @@ async def test_gui_password_bcrypt_readback_verification():
     }
 
     def handle(request):
+        if request.url.path == "/rest/system/status":
+            return httpx.Response(200, json={"guiAddressOverridden": False})
         if request.url.path == "/rest/config/gui":
             if request.method == "PUT":
                 state.update(json.loads(request.content))
@@ -636,6 +638,8 @@ async def test_gui_addresses_with_safe_socket_or_tcp_destination_remain_supporte
     state = {"address": "127.0.0.1:8384", "theme": "default"}
 
     def handle(request):
+        if request.url.path == "/rest/system/status":
+            return httpx.Response(200, json={"guiAddressOverridden": False})
         if request.url.path == "/rest/config/restart-required":
             return httpx.Response(200, json={"requiresRestart": True})
         if request.method == "PUT":
@@ -657,6 +661,8 @@ async def test_gui_socket_rebind_requires_destructive_authority_even_for_theme_c
 
     def handle(request):
         calls.append(request)
+        if request.url.path == "/rest/system/status":
+            return httpx.Response(200, json={"guiAddressOverridden": False})
         return httpx.Response(200, json={"address": "/data/gui.sock", "theme": "default"})
 
     client = engine(handle, ADMIN | {"SYNCTHING_MCP_ALLOW_DESTRUCTIVE": "false"})
@@ -673,6 +679,8 @@ async def test_gui_socket_rebind_requires_explicit_confirmation(confirm):
 
     def handle(request):
         calls.append(request)
+        if request.url.path == "/rest/system/status":
+            return httpx.Response(200, json={"guiAddressOverridden": False})
         return httpx.Response(200, json={"address": "/data/gui.sock", "theme": "default"})
 
     client = engine(handle)
@@ -683,4 +691,93 @@ async def test_gui_socket_rebind_requires_explicit_confirmation(confirm):
         await client.call("syncthing_update_gui", arguments)
     assert error.value.code == "confirmation_required"
     assert all(request.method == "GET" for request in calls)
+    await client.aclose()
+
+
+async def test_gui_runtime_override_cannot_hide_unix_socket_behind_raw_tcp_address():
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        if request.url.path == "/rest/system/status":
+            return httpx.Response(
+                200, json={"guiAddressOverridden": True, "guiAddressUsed": "/outside/runtime.sock"}
+            )
+        return httpx.Response(200, json={"address": "127.0.0.1:8384", "theme": "default"})
+
+    client = engine(handle)
+    with pytest.raises(PublicError) as error:
+        await client.call("syncthing_update_gui", {"patch": {"theme": "dark"}})
+    assert error.value.code == "unsupported_override"
+    assert all(request.method == "GET" for request in calls)
+    assert "/outside/runtime.sock" not in str(error.value)
+    await client.aclose()
+
+
+@pytest.mark.parametrize(
+    "status", [None, [], {}, {"guiAddressOverridden": "false"}, {"guiAddressOverridden": 0}]
+)
+async def test_gui_runtime_override_preflight_requires_typed_status_flag(status):
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        if request.url.path == "/rest/system/status":
+            return httpx.Response(200, json=status)
+        return httpx.Response(200, json={"address": "127.0.0.1:8384", "theme": "default"})
+
+    client = engine(handle)
+    with pytest.raises(PublicError) as error:
+        await client.call("syncthing_update_gui", {"patch": {"theme": "dark"}})
+    assert error.value.code == "upstream_shape"
+    assert all(request.method == "GET" for request in calls)
+    await client.aclose()
+
+
+@pytest.mark.parametrize("failure", ["http", "timeout"])
+async def test_gui_runtime_override_preflight_failure_denies_mutation(failure):
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        if request.url.path == "/rest/system/status":
+            if failure == "timeout":
+                raise httpx.ReadTimeout("fixture", request=request)
+            return httpx.Response(503)
+        return httpx.Response(200, json={"address": "127.0.0.1:8384", "theme": "default"})
+
+    client = engine(handle)
+    with pytest.raises(PublicError) as error:
+        await client.call("syncthing_update_gui", {"patch": {"theme": "dark"}})
+    assert error.value.code == ("upstream_timeout" if failure == "timeout" else "upstream_error")
+    assert all(request.method == "GET" for request in calls)
+    await client.aclose()
+
+
+async def test_gui_without_runtime_override_can_update_tcp_theme():
+    calls = []
+    state = {"address": "127.0.0.1:8384", "theme": "default"}
+
+    def handle(request):
+        calls.append(request)
+        if request.url.path == "/rest/system/status":
+            return httpx.Response(
+                200, json={"guiAddressOverridden": False, "guiAddressUsed": "127.0.0.1:8384"}
+            )
+        if request.url.path == "/rest/config/restart-required":
+            return httpx.Response(200, json={"requiresRestart": False})
+        if request.method == "PUT":
+            state.update(json.loads(request.content))
+            return httpx.Response(200)
+        return httpx.Response(200, json=state)
+
+    client = engine(handle, ADMIN | {"SYNCTHING_MCP_ALLOW_DESTRUCTIVE": "false"})
+    result = await client.call("syncthing_update_gui", {"patch": {"theme": "dark"}})
+    assert result["outcome"] == "verified"
+    assert state["theme"] == "dark"
+    assert [(request.method, request.url.path) for request in calls[:3]] == [
+        ("GET", "/rest/config/gui"),
+        ("GET", "/rest/system/status"),
+        ("PUT", "/rest/config/gui"),
+    ]
     await client.aclose()
