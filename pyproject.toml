@@ -1,6 +1,6 @@
 [project]
 name = "syncthing-mcp"
-version = "0.1.1"
+version = "0.1.2"
 description = "Secure configurable Syncthing MCP server"
 readme = "README.md"
 license = "MIT"

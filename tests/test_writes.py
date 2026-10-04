@@ -550,3 +550,137 @@ async def test_report_error_failed_readback_keeps_honest_accepted_outcome():
     assert result["outcome"] == "accepted"
     assert result["readback_observed"] is None
     await client.aclose()
+
+
+async def test_restore_rejects_stale_folder_revision_before_version_requests_or_mutation():
+    backend = Backend()
+    client = engine(backend)
+    with pytest.raises(PublicError) as error:
+        await client.call(
+            "syncthing_restore_versions",
+            {
+                "folder": "x",
+                "confirm": True,
+                "expected_revision": revision({"stale": True}),
+                "versions": {"a.txt": "2026-01-01T00:00:00Z"},
+            },
+        )
+    assert error.value.code == "revision_conflict"
+    assert [(r.method, r.url.path) for r in backend.calls] == [("GET", "/rest/config/folders/x")]
+    await client.aclose()
+
+
+async def test_restore_accepts_current_raw_folder_revision_before_version_side_effects():
+    backend = Backend()
+    client = engine(backend)
+    await client.call(
+        "syncthing_restore_versions",
+        {
+            "folder": "x",
+            "confirm": True,
+            "expected_revision": revision(backend.folder),
+            "versions": {"a.txt": "2026-01-01T00:00:00Z"},
+        },
+    )
+    assert [(r.method, r.url.path) for r in backend.calls[:3]] == [
+        ("GET", "/rest/config/folders/x"),
+        ("GET", "/rest/folder/versions"),
+        ("POST", "/rest/folder/versions"),
+    ]
+    await client.aclose()
+
+
+@pytest.mark.parametrize("path", ["/outside/gui.sock", "/data/../outside/gui.sock"])
+async def test_gui_unix_socket_address_cannot_bypass_destination_roots(path):
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, json={"address": "127.0.0.1:8384", "theme": "default"})
+
+    client = engine(handle)
+    with pytest.raises(PublicError):
+        await client.call("syncthing_update_gui", {"patch": {"address": path}})
+    assert all(request.method == "GET" for request in calls)
+    await client.aclose()
+
+
+@pytest.mark.parametrize("patch", [{"theme": "dark"}, {"unixSocketPermissions": "0600"}])
+async def test_gui_rebind_checks_existing_unix_socket_destination(patch):
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, json={"address": "/outside/gui.sock", "theme": "default"})
+
+    client = engine(handle)
+    with pytest.raises(PublicError):
+        await client.call("syncthing_update_gui", {"patch": patch})
+    assert all(request.method == "GET" for request in calls)
+    await client.aclose()
+
+
+async def test_gui_unix_socket_destination_requires_configured_roots():
+    def handle(request):
+        return httpx.Response(200, json={"address": "127.0.0.1:8384"})
+
+    client = engine(handle, ADMIN | {"SYNCTHING_MCP_ALLOWED_PATHS": "[]"})
+    with pytest.raises(PublicError) as error:
+        await client.call("syncthing_update_gui", {"patch": {"address": "/data/gui.sock"}})
+    assert error.value.code == "path_denied"
+    await client.aclose()
+
+
+@pytest.mark.parametrize("address", ["/data/gui.sock", "127.0.0.1:8385", "[::1]:8385"])
+async def test_gui_addresses_with_safe_socket_or_tcp_destination_remain_supported(address):
+    state = {"address": "127.0.0.1:8384", "theme": "default"}
+
+    def handle(request):
+        if request.url.path == "/rest/config/restart-required":
+            return httpx.Response(200, json={"requiresRestart": True})
+        if request.method == "PUT":
+            state.update(json.loads(request.content))
+            return httpx.Response(200)
+        return httpx.Response(200, json=state)
+
+    client = engine(handle)
+    result = await client.call(
+        "syncthing_update_gui", {"patch": {"address": address}, "confirm": True}
+    )
+    assert result["outcome"] == "verified"
+    assert state["address"] == address
+    await client.aclose()
+
+
+async def test_gui_socket_rebind_requires_destructive_authority_even_for_theme_change():
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, json={"address": "/data/gui.sock", "theme": "default"})
+
+    client = engine(handle, ADMIN | {"SYNCTHING_MCP_ALLOW_DESTRUCTIVE": "false"})
+    with pytest.raises(PublicError) as error:
+        await client.call("syncthing_update_gui", {"patch": {"theme": "dark"}, "confirm": True})
+    assert error.value.code == "permission_denied"
+    assert all(request.method == "GET" for request in calls)
+    await client.aclose()
+
+
+@pytest.mark.parametrize("confirm", [None, False])
+async def test_gui_socket_rebind_requires_explicit_confirmation(confirm):
+    calls = []
+
+    def handle(request):
+        calls.append(request)
+        return httpx.Response(200, json={"address": "/data/gui.sock", "theme": "default"})
+
+    client = engine(handle)
+    arguments = {"patch": {"theme": "dark"}}
+    if confirm is not None:
+        arguments["confirm"] = confirm
+    with pytest.raises(PublicError) as error:
+        await client.call("syncthing_update_gui", arguments)
+    assert error.value.code == "confirmation_required"
+    assert all(request.method == "GET" for request in calls)
+    await client.aclose()

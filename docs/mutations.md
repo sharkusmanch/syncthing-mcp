@@ -12,13 +12,17 @@ Unknown fields, identity changes in generic patches and invalid nested shapes ar
 | Device | `name`, `paused`, `compression`, `maxSendKbps`, `maxRecvKbps` | Addresses, certificate/trust, introduction, auto-accept, network and connection settings |
 | Defaults | None | Explicit field policy; inherited defaults validated when creating |
 | Options | None | Enumerated network/discovery, bandwidth, reporting and runtime settings |
-| GUI / LDAP | None | Enumerated security settings; no API-key rotation through this server, unsafe bypass flags rejected |
+| GUI / LDAP | None | Enumerated security settings; no API-key rotation through this server, unsafe bypass flags rejected; effective UNIX GUI addresses require allowed destination roots, destructive authority and confirmation |
 
 No root configuration replacement, external-command versioner, arbitrary method/URL/body proxy, or ignored-device workflow requiring root replacement exists. Simple, trashcan and staggered versioning are supported with reviewed parameters and archive destination checks. `#include` ignores and transitions to/from `receiveencrypted` are excluded.
 
 ## Writes
 
 Updates fetch current state, compare optional `expected_revision`, preserve unrelated nested properties, and PUT the controlled merge. Arrays are explicit replacement values, not implicit append operations. Revisions hash current upstream objects; obtain them from individual configuration reads. Local locks serialize this server's writes only. Other API/UI clients can race revision and duplicate-create checks because Syncthing has no atomic compare-and-swap or create-if-absent.
+
+For version restoration, `expected_revision` refers to the raw folder configuration fingerprint returned by `syncthing_folder_config`. The server fetches that configuration and rejects a stale revision before fetching archived versions or submitting restoration. This guard does not lock the archive inventory or prevent another client from changing configuration after preflight.
+
+Syncthing treats raw GUI addresses beginning with `/` as UNIX socket paths and removes the destination before binding. Every GUI configuration change restarts its listener, including theme and socket-permission changes. An update whose effective GUI address is a UNIX socket therefore requires that path to pass the instance's `allowed_paths`, `ALLOW_DESTRUCTIVE=true`, and explicit `confirm=true`. TCP GUI updates retain their ordinary write/admin requirements. These path checks are lexical; they do not resolve remote symlinks. Syncthing's operating-system permissions remain the physical confinement boundary. Listener changes can interrupt API access, leaving readback and the overall outcome unknown.
 
 Creation refuses an existing ID, selects peers explicitly, validates inherited settings, and creates paused. Ignore initialization/readback must succeed before a requested resume. Pending acceptance requires an actual matching offer. Dismissing an offer is temporary; it does not permanently block a peer or folder. Destination allowlists are required for creation/path changes; empty roots deny them.
 

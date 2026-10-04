@@ -305,3 +305,9 @@ def validate_patch(
             raise deny(
                 "Static GUI authentication requires effective user and password credentials."
             )
+    if kind == "gui" and effective is not None:
+        address = effective.get("address")
+        # Syncthing classifies leading-slash raw GUI addresses as UNIX sockets.
+        # Every changed GUI object restarts that listener, even a theme change.
+        if isinstance(address, str) and address.startswith("/"):
+            destination(address, instance)

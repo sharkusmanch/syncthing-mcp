@@ -109,6 +109,15 @@ class PatchArguments(MutationArguments):
     expected_revision: Annotated[str | None, Field(pattern=r"^[a-f0-9]{64}$")] = None
 
 
+class GuiPatchArguments(PatchArguments):
+    confirm: Annotated[
+        bool,
+        Field(
+            description="Required for UNIX socket GUI rebinding, which may unlink its destination."
+        ),
+    ] = False
+
+
 class FolderPatchArguments(PatchArguments):
     folder: ID
 
@@ -204,7 +213,7 @@ class Operation:
             self.description,
             self.model.model_json_schema(),
             self.read_only,
-            self.destructive,
+            self.destructive or self.name == "update_gui",
             self.group,
         )
 
@@ -448,7 +457,14 @@ OPERATIONS = [
         admin=True,
     ),
     write("update_options", "config/options", PatchArguments, handler="update", admin=True),
-    write("update_gui", "config/gui", PatchArguments, handler="update", admin=True),
+    write(
+        "update_gui",
+        "config/gui",
+        GuiPatchArguments,
+        handler="update",
+        admin=True,
+        description="Update GUI; UNIX sockets require destructive authority and confirm=true.",
+    ),
     write("update_ldap", "config/ldap", PatchArguments, handler="update", admin=True),
     write(
         "pause_folder",

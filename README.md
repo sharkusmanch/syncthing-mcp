@@ -56,7 +56,7 @@ All settings below use the `SYNCTHING_MCP_` prefix unless shown otherwise. Lists
 | `ALLOW_ADMIN` | `false`; also requires writes; trust, sharing, security and global administration |
 | `ALLOWED_PATHS`, `PATH_STYLE` | Single-instance destination roots; empty denies destination changes; `posix` default or `windows` |
 | `CA_FILE` | Optional CA bundle for upstream HTTPS; certificate validation cannot be disabled |
-| `REQUEST_TIMEOUT`, `SCAN_TIMEOUT` | 30 / 300 seconds; scan has a longer finite deadline |
+| `REQUEST_TIMEOUT`, `SCAN_TIMEOUT` | 30 / 300 seconds; overview shares one request deadline across all folder reads; scan has a longer finite deadline |
 | `MAX_REQUEST_BYTES` | 262144; HTTP body and tool argument budget |
 | `MAX_OUTPUT_BYTES` | 262144; HTTP response and tool-result budget |
 | `MAX_UPSTREAM_BYTES` | 4194304; maximum streamed upstream response |
@@ -91,6 +91,8 @@ See [coverage](docs/coverage.md) for tool names and exclusions, [mutation policy
 ## Results and token use
 
 Discovery is deterministic and paginated. Lists return bounded pages with `returned`, `next_cursor`, `truncated`, and pagination semantics. `fields` selects top-level fields **after** safe configuration projection; it cannot recover hidden secrets. Offset pages reflect live state and are not stable snapshots. Event retention can create gaps; event results report completeness limitations explicitly.
+
+Overview returns `partial: true` when folder status reads fail or exhaust its aggregate request deadline. Completed statuses are retained, unavailable statuses are null, and `deadline_exceeded` distinguishes budget exhaustion. Failure before the initial system/folder snapshot returns an error.
 
 Configuration credentials and unknown configuration fields are omitted. Diagnostic tools expose potentially sensitive operational text and are off by default. Known-secret redaction is defense in depth; arbitrary remote text is untrusted data, never an instruction to the client.
 

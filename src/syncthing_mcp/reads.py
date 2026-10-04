@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from .client import SyncthingClient
@@ -267,25 +268,48 @@ async def read_operation(
             "profile": settings.profile,
         }
     if op.handler == "overview":
-        status = await client.request("GET", "/rest/system/status")
-        folders = await client.request("GET", "/rest/config/folders")
-        if not isinstance(folders, list):
-            raise PublicError("upstream_shape", "Expected upstream folders.")
-        summary = local_page(
-            [configuration_projection(folder, "/rest/config/folders") for folder in folders],
-            args,
-            settings,
-        )
-        for folder in summary["items"]:
-            if "id" not in folder:
-                continue
-            try:
-                folder["status"] = await client.request(
-                    "GET", "/rest/db/status", params={"folder": folder["id"]}
+        summary = None
+        partial = False
+        deadline_exceeded = False
+        try:
+            # A dashboard shares one deadline across all upstream requests;
+            # slow folders must not multiply it by the page size.
+            async with asyncio.timeout(settings.request_timeout):
+                status = await client.request("GET", "/rest/system/status")
+                folders = await client.request("GET", "/rest/config/folders")
+                if not isinstance(folders, list):
+                    raise PublicError("upstream_shape", "Expected upstream folders.")
+                summary = local_page(
+                    [
+                        configuration_projection(folder, "/rest/config/folders")
+                        for folder in folders
+                    ],
+                    args,
+                    settings,
                 )
-            except PublicError:
-                folder["status"] = None
-        return {"instance": instance.name, "system": status, **summary}
+                for folder in summary["items"]:
+                    if "id" in folder:
+                        folder["status"] = None
+                for folder in summary["items"]:
+                    if "id" not in folder:
+                        continue
+                    try:
+                        folder["status"] = await client.request(
+                            "GET", "/rest/db/status", params={"folder": folder["id"]}
+                        )
+                    except PublicError:
+                        partial = True
+        except TimeoutError:
+            if summary is None:
+                raise PublicError("upstream_timeout", "Overview exceeded its deadline.") from None
+            partial = deadline_exceeded = True
+        return {
+            "instance": instance.name,
+            "system": status,
+            **summary,
+            "partial": partial,
+            "deadline_exceeded": deadline_exceeded,
+        }
     route = route_for(op, args)
     params = params_for(op, args)
     limit = min(args.get("limit", 50), settings.max_page_size)

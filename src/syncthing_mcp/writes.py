@@ -153,6 +153,17 @@ async def update(
     effective = merge(current, patch)
     kind = kind_for(route)
     validate_patch(kind, patch, settings, instance, effective=effective)
+    if kind == "gui":
+        address = effective.get("address")
+        if isinstance(address, str) and address.startswith("/"):
+            if not settings.allow_destructive:
+                raise PublicError(
+                    "permission_denied", "UNIX socket GUI rebinding requires destructive authority."
+                )
+            if args.get("confirm") is not True:
+                raise PublicError(
+                    "confirmation_required", "UNIX socket GUI rebinding requires confirm=true."
+                )
     if kind == "folder" and "devices" in patch:
         await validate_peers(client, patch["devices"])
     if (
@@ -439,6 +450,10 @@ async def write_operation(
     if op.handler == "restore":
         for path in args["versions"]:
             relative_path(path)
+        current = await client.request("GET", "/rest/config/folders/" + opaque_id(args["folder"]))
+        if not isinstance(current, dict):
+            raise PublicError("upstream_shape", "Expected a folder configuration object.")
+        check_revision(current, args)
         available = await client.request("GET", "/rest/folder/versions", params=params)
         if not isinstance(available, dict):
             raise PublicError("upstream_shape", "Expected available file versions.")
