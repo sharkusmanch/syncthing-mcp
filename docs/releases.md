@@ -19,3 +19,9 @@ gh attestation verify oci://ghcr.io/sharkusmanch/syncthing-mcp@sha256:DIGEST \
 Inspect the index and BuildKit attached platform attestations to verify both linux/amd64 and linux/arm64 SBOM/provenance artifacts exist. A single platform's SBOM is not evidence for both architectures. Pin the verified index digest in deployments.
 
 Renovate runs through the GitHub App, not a privileged in-repository scheduled workflow. New repositories must be included in the App installation; `renovate.json` alone does not grant that access. Verify a Renovate-authored dashboard/check/PR after onboarding. Updates require review; automerge is disabled.
+
+## Initial base-image remediation
+
+v0.1.0 was never promoted: the high-severity image gate rejected the Debian base. Alpine alternatives also carried CVE-2026-85091. v0.1.1 uses matching digest-pinned Chainguard Python dev/runtime images; Wolfi carries the vendor-maintained zlib fix. No vulnerability exclusions or severity downgrade were introduced. Both native extensions and actual HTTP startup are smoke-tested for each release architecture before scanning and promotion.
+
+References: [Wolfi zlib packaging](https://github.com/wolfi-dev/os/blob/main/zlib.yaml), [upstream fix](https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148), [Chainguard Python multistage guidance](https://images.chainguard.dev/directory/image/python/overview).

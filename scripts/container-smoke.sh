@@ -1,11 +1,12 @@
 #!/bin/sh
 set -eu
 image=${1:?image required}
+platform=${2:-linux/amd64}
 name=syncthing-mcp-smoke
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT INT TERM
 token=$(openssl rand -hex 32)
-docker run -d --name "$name" --read-only --cap-drop=ALL --security-opt=no-new-privileges \
+docker run -d --platform "$platform" --name "$name" --read-only --cap-drop=ALL --security-opt=no-new-privileges \
   -p 127.0.0.1:18088:8080 \
   -e SYNCTHING_URL=http://127.0.0.1:8384 -e SYNCTHING_API_KEY=disposable-test-backend-key \
   -e SYNCTHING_MCP_TRANSPORT=http -e SYNCTHING_MCP_HOST=0.0.0.0 \
@@ -20,4 +21,4 @@ test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18088/mcp)" = 40
 curl -fsS http://127.0.0.1:18088/mcp -H "Authorization: Bearer $token" \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"smoke","version":"1"}}}' | jq -e '.result.serverInfo.name == "syncthing-mcp"'
-docker exec "$name" python -c 'import os; assert os.getuid() == 10001'
+docker exec "$name" python -c 'import os, bcrypt, cryptography, pydantic_core, rpds; assert os.getuid() == 10001; assert bcrypt.checkpw(b"fixture", bcrypt.hashpw(b"fixture", bcrypt.gensalt(rounds=4)))'

@@ -32,7 +32,7 @@ Connect at `http://127.0.0.1:8080/mcp` with `Authorization: Bearer <mcp-token>`.
 
 This static bearer mode is for trusted private deployments, not a full MCP OAuth authorization server. Use HTTPS at a reverse proxy for remote access, pass the Authorization header, set the exact external Host allowlist, and restrict network access. `/healthz` and `/readyz` are public, process-only health checks. They intentionally do not check Syncthing availability.
 
-Published container: `ghcr.io/sharkusmanch/syncthing-mcp`. Use a release tag **and verified digest**, bind HTTP to `0.0.0.0` inside the container, run as UID/GID 10001, with a read-only filesystem and no capabilities. No Syncthing data volume is needed.
+Published container: `ghcr.io/sharkusmanch/syncthing-mcp`. Use a release tag **and verified digest**, bind HTTP to `0.0.0.0` inside the container, run as UID/GID 10001, with a read-only filesystem and no capabilities. No Syncthing data volume is needed. The digest-pinned Chainguard Python runtime contains no shell or package manager; use `python` for operational probes.
 
 ## Configure coverage and authority
 

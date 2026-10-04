@@ -65,6 +65,13 @@ jobs:
             digest=$(jq -er --arg arch "$architecture" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' /tmp/index.json)
             echo "$architecture=$digest" >> "$GITHUB_OUTPUT"
           done
+      - name: Smoke test both platform images
+        env:
+          AMD64_DIGEST: ${{ steps.platforms.outputs.amd64 }}
+          ARM64_DIGEST: ${{ steps.platforms.outputs.arm64 }}
+        run: |
+          sh scripts/container-smoke.sh "$IMAGE@$AMD64_DIGEST" linux/amd64
+          sh scripts/container-smoke.sh "$IMAGE@$ARM64_DIGEST" linux/arm64
       - name: Scan AMD64 image
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
