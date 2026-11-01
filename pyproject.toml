@@ -13,10 +13,10 @@ syncthing-mcp = "syncthing_mcp.server:main"
 
 [dependency-groups]
 dev = ["pytest>=9.1.1,<10", "pytest-asyncio>=1.4.0,<2", "pytest-cov>=7,<8", "ruff>=0.16.10,<0.17", "mypy>=1.19,<2", "respx>=0.23.1,<0.24", "build>=1.3,<2", "pip-audit==2.10.1"]
-build = ["hatchling==1.32.4"]
+build = ["hatchling==1.33.0"]
 
 [build-system]
-requires = ["hatchling==1.32.4"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
